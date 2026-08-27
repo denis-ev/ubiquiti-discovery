@@ -298,8 +298,9 @@ vlan_scan.ps1                       VLAN walker (Windows)
 build_exe.bat                       one-click Windows build
 .github/workflows/build-windows.yml CI build of the Windows exe
 README.md
+LICENSE
 ```
 
 ## License
 
-MIT. Add your own copyright line before publishing.
+MIT — Copyright (c) 2026 Denis Evers. See [LICENSE](LICENSE).
