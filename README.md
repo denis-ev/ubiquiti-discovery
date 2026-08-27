@@ -30,8 +30,8 @@ python3 ubnt_gui.py
 ```
 
 It exposes the options that matter: interface, listen time, broadcast vs
-subnet sweep, an extra broadcast address, and watch mode. Results fill the
-table as they arrive rather than at the end. Click a column heading to sort,
+subnet sweep vs VLAN walk, an extra broadcast address, and watch mode. Results
+fill the table as they arrive rather than at the end. Click a column heading to sort,
 double-click a row to open that device's web interface, and export to text,
 CSV or JSON. The **Stop** button cancels mid-scan, which matters because a
 large subnet sweep would otherwise run for minutes.
@@ -39,6 +39,33 @@ large subnet sweep would otherwise run for minutes.
 Warnings that the command line prints — a port conflict with the Ubiquiti
 Discovery Tool, for instance — appear in the log pane at the bottom instead of
 being lost.
+
+### VLAN walking from the GUI
+
+On Windows the GUI can walk VLANs itself — the third mode, next to Broadcast
+and Sweep. It does what `vlan_scan.ps1` does, but in-process, so it needs no
+separate script and no copy of `ubnt_scan.exe` beside it. A **VLAN** column
+appears in the table and in CSV and JSON exports, so you can see which VLAN
+each device answered on.
+
+The same constraints apply as for the script, because they come from Windows
+and not from the tool: it needs a **trunk port**, it needs **Administrator**,
+and it **reconfigures a live adapter** for the duration.
+
+- **Check adapter** reports what the NIC supports and changes nothing. Run it
+  before your first walk — if the driver exposes no VLAN ID property and
+  Hyper-V is absent, the walk cannot run and the report says so.
+- Starting a walk without Administrator offers to relaunch elevated. Accepting
+  raises the usual UAC prompt and reopens the window; results on screen at the
+  time are lost, so export first if you care about them.
+- A confirmation names the adapter, the VLAN count and a rough duration before
+  anything is changed.
+- **Stop** cancels mid-walk and still restores the adapter, as does closing the
+  window. Restore also runs if a VLAN fails part-way through.
+
+Everything in the "Read this before running it" list under the PowerShell
+script applies here too — in particular, disconnect Wi-Fi first, and never
+point it at the adapter carrying a remote session.
 
 ## Windows executable
 
@@ -210,8 +237,9 @@ sudo ifconfig vlan0 destroy
 
 On **Windows** there are no 802.1Q sub-interfaces, so you cannot have several
 VLANs live at once. You can still walk them one at a time by tagging the
-adapter itself. `vlan_scan.ps1` does that, using whichever of two methods your
-hardware supports:
+adapter itself. Either the GUI (see above) or `vlan_scan.ps1` does that, using
+whichever of two methods your hardware supports — both share the same logic,
+so a machine that works with one works with the other:
 
 - **Adapter VLAN property** — sets the NIC's own "VLAN ID" advanced setting.
   Needs a driver that exposes it. Note that Intel removed VLAN support from
@@ -293,6 +321,7 @@ Only run it on networks you are responsible for.
 ```
 ubnt_scan.py                        the scanner (also a CLI)
 ubnt_gui.py                         point-and-click window
+vlan_win.py                         Windows VLAN control, used by the GUI
 vlan_scan.sh                        VLAN walker (Linux)
 vlan_scan.ps1                       VLAN walker (Windows)
 build_exe.bat                       one-click Windows build
