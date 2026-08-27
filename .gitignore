@@ -1,0 +1,22 @@
+# Build artefacts
+build/
+dist/
+*.spec
+.buildenv/
+__pycache__/
+*.py[cod]
+
+# Scan output — never commit discovery results, they map your network
+ubnt-scan-*.txt
+ubnt-scan-*.csv
+ubnt-scan-*.json
+found.csv
+devices.csv
+devices.json
+*.report.txt
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

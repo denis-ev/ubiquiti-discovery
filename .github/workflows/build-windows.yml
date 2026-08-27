@@ -1,0 +1,75 @@
+name: Build Windows executable
+
+# Builds ubnt_scan.exe on a real Windows runner. Use this if you have no
+# Windows machine handy to build on: push the repo, let the job run, then
+# download the exe from the run's Artifacts section.
+#
+# Tagging a commit v1.0.0 (or similar) also attaches the exe to a Release.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller
+
+      - name: Build command line executable
+        run: >
+          pyinstaller --onefile --console --name ubnt_scan
+          --clean --noconfirm ubnt_scan.py
+
+      - name: Build GUI executable
+        run: >
+          pyinstaller --onefile --windowed --name ubnt_scan_gui
+          --clean --noconfirm ubnt_gui.py
+
+      - name: Smoke test the executable
+        shell: pwsh
+        run: |
+          # --help must work, and a scan must exit cleanly with no devices.
+          .\dist\ubnt_scan.exe --help
+          if ($LASTEXITCODE -ne 0) { throw "--help failed" }
+          .\dist\ubnt_scan.exe -t 2 --no-pause -v
+          if ($LASTEXITCODE -ne 0) { throw "scan run failed" }
+          # The GUI cannot be driven headlessly, but confirm it launches and
+          # stays up rather than dying on a missing import.
+          $p = Start-Process -FilePath .\dist\ubnt_scan_gui.exe -PassThru
+          Start-Sleep -Seconds 8
+          if ($p.HasExited) { throw "GUI exited immediately (code $($p.ExitCode))" }
+          Stop-Process -Id $p.Id -Force
+          Write-Host "Smoke test passed."
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ubnt_scan-windows-x64
+          path: |
+            dist/ubnt_scan.exe
+            dist/ubnt_scan_gui.exe
+          if-no-files-found: error
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/ubnt_scan.exe
+            dist/ubnt_scan_gui.exe
