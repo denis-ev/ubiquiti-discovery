@@ -178,6 +178,7 @@ $out = [ordered]@{
     vlan_keyword = $null; vlan_display = $null; vlan_value = $null
     has_prio = $false; prio_value = $null
     hyperv = $false; hyperv_switch = $null
+    hyperv_module = $false; hyperv_error = $null
 }
 try { $null = Get-NetAdapter -Name $name -ErrorAction Stop; $out.exists = $true } catch { }
 if ($out.exists) {
@@ -210,10 +211,16 @@ if ($out.exists) {
   } catch { }
 }
 if (Get-Command Get-VMSwitch -ErrorAction SilentlyContinue) {
+  $out.hyperv_module = $true
   try {
     $sw = Get-VMSwitch -SwitchType External -ErrorAction Stop | Select-Object -First 1
     if ($sw) { $out.hyperv = $true; $out.hyperv_switch = [string]$sw.Name }
-  } catch { }
+  } catch {
+    # Get-VMSwitch needs elevation. Without this the access-denied would be
+    # indistinguishable from "this machine has no external vSwitch", and the
+    # report would state a guess as a fact.
+    $out.hyperv_error = [string]$_.Exception.Message
+  }
 }
 [pscustomobject]$out
 """
@@ -236,6 +243,9 @@ def capabilities(adapter):
         "prio_value": caps.get("prio_value"),
         "hyperv": bool(caps.get("hyperv")),
         "hyperv_switch": caps.get("hyperv_switch") or None,
+        "hyperv_module": bool(caps.get("hyperv_module")),
+        "hyperv_error": caps.get("hyperv_error") or None,
+        "elevated": is_admin(),
     }
 
 
@@ -254,6 +264,12 @@ def choose_method(caps, preferred="auto"):
         return "adapter"
     if caps.get("hyperv"):
         return "hyperv"
+    if caps.get("hyperv_error") and not caps.get("elevated"):
+        raise VlanError(
+            "No VLAN ID property on this driver, and the Hyper-V check could "
+            "not run without Administrator.\n\n"
+            "Re-run the capability check elevated before concluding this "
+            "machine cannot walk VLANs.")
     raise VlanError(
         "Neither VLAN method is available on this machine.\n\n"
         "Remaining options:\n"
@@ -284,8 +300,18 @@ def describe_capabilities(caps):
     if caps["hyperv"]:
         lines.append("  Hyper-V external vSwitch: available ('%s')"
                      % caps["hyperv_switch"])
+    elif caps.get("hyperv_error"):
+        lines.append("  Hyper-V external vSwitch: COULD NOT CHECK")
+        lines.append("    %s" % caps["hyperv_error"].strip().splitlines()[0])
+        if not caps.get("elevated"):
+            lines.append("    Get-VMSwitch needs Administrator. Re-run the check")
+            lines.append("    elevated before concluding Hyper-V is unavailable.")
+    elif caps.get("hyperv_module"):
+        lines.append("  Hyper-V external vSwitch: none configured")
     else:
-        lines.append("  Hyper-V external vSwitch: not available")
+        lines.append("  Hyper-V external vSwitch: Hyper-V not installed")
+    lines.append("  Running elevated        : %s"
+                 % ("yes" if caps.get("elevated") else "no"))
     return lines
 
 
@@ -381,11 +407,15 @@ class VlanWalker:
         if self.method == "adapter":
             script = ""
             if self.caps.get("has_prio"):
-                # 2 = VLAN enabled. Some drivers ignore the VLAN ID without it.
+                # 2 = VLAN enabled, 3 = priority and VLAN. Some drivers ignore
+                # the VLAN ID unless one of those is set. If priority tagging
+                # was already on, keep it rather than silently turning it off
+                # for the duration of the walk.
+                want = "3" if str(self._original_prio) == "3" else "2"
                 script += ("Set-NetAdapterAdvancedProperty -Name %s "
-                           "-RegistryKeyword '*PriorityVLANTag' -RegistryValue '2' "
+                           "-RegistryKeyword '*PriorityVLANTag' -RegistryValue %s "
                            "-NoRestart -ErrorAction SilentlyContinue;\n"
-                           % _q(self.adapter))
+                           % (_q(self.adapter), _q(want)))
             script += ("Set-NetAdapterAdvancedProperty -Name %s -RegistryKeyword %s "
                        "-RegistryValue %s -ErrorAction Stop"
                        % (_q(self.adapter), _q(self.caps["vlan_keyword"]), _q(vid)))

@@ -687,6 +687,27 @@ class ScannerGUI:
         self.caps = caps
         for line in lines:
             self.append_log(line)
+        # A Hyper-V check that could not run is not the same as no Hyper-V, and
+        # the difference decides whether this machine can walk VLANs at all.
+        # Offer to settle it rather than leaving a guess in the log.
+        if (caps.get("hyperv_error") and not caps.get("elevated")
+                and not caps.get("vlan_keyword")):
+            if messagebox.askyesno(
+                    "Check needs Administrator",
+                    "This driver exposes no VLAN ID property, and the Hyper-V "
+                    "check could not run without Administrator - so whether "
+                    "this machine can walk VLANs is still unknown.\n\n"
+                    "Restart the scanner elevated and check again? Windows "
+                    "will ask you to confirm, and this window will close and "
+                    "reopen.\n\nAny results currently on screen will be lost."):
+                try:
+                    if V.relaunch_as_admin():
+                        self.root.after(200, self.root.destroy)
+                    else:
+                        self.append_log("Elevation prompt dismissed; "
+                                        "Hyper-V state still unknown.")
+                except Exception as exc:
+                    messagebox.showerror("Could not elevate", str(exc))
 
     def add_device(self, dev):
         key = dev.get("mac") or dev["ip"]
